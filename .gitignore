@@ -1,0 +1,9 @@
+.DS_Store
+
+japan/data/*
+!japan/data/readme.md
+!japan/data/5134
+japan/data/5134/*
+!japan/data/5134/51
+japan/data/5134/51/*
+!japan/data/5134/51/readme.md
