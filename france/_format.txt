@@ -1,0 +1,130 @@
+
+RGE ALTI file format notes
+
+Using the following latitude/longitude (WGS84) for Roquebrune-cap-martin:
+  lat = 43.765238
+  lon = 7.459564
+  
+We transform it to Lambert93 using pyproj.Transformer:
+  1058967.052186108 6306385.772297195
+
+And determine that it's located near the edge in slab 1058_6307
+
+1km x 1km slab 1058_6307:
+
+         1058000                      1058999
+
+   6307000  o----------------------------+ 
+            |                            |
+            |                            |
+            |                            |
+            |                            |
+            |                            |
+            |          1058_6307         |
+            |                            |
+            |                            |
+            |                          * | <- Chateau Medieval du Roquebrune
+            |                            |
+            |                            |
+            |                            |
+            |                            |
+   6306001  +----------------------------+
+
+Each slab is divided into 1000x1000 cells, each 1m x 1m, for a combined size of 1 sq km.
+
+Each cell value is the height at the the middle of the cell and corresponds to integer x,y
+coordinate values:
+
+              1058000   1058001
+                 |         |
+
+            +---------+---------+---         6307000.5
+            |         |         |
+  6307000   |   (a)   |    +    |  . . .
+            |         |         |
+            +---------+---------+---         6306999.5
+            |         |         |
+  6306999   |    +    |    +    |  . . .
+            |         |         |
+            +---------+---------+---         6306998.5
+            |         |         |
+  
+               . . .     . . .     . . .
+  
+            |         |         |
+            +---------+---------+---
+            |         |         |
+  6306002   |    +    |    +    |  . . .
+            |         |         |
+            +---------+---------+---         6306001.5
+            |         |         |
+  6306001   |    +    |    +    |  . . .
+            |         |         |
+           (b)--------+---------+---         6306000.5
+  
+            |         |         |
+         1057999.5    |      1058001.5
+                   1058000.5
+
+The slab's upper left cell center is 1058000,6307000 (hence the filename: 1058_6307).
+Note that this aligns to a kilometer boundary. Marked with "a".
+
+The slab's lower left cell center is 1058000,6306001, but the slab extends half a cell
+down and to the left. So the lower left corner of the entire slab (which is recorded in
+the .asc file) is 1057999.5, 6306000.5 (marked with "b").
+
+So the slab 1058_6307 actually extends from 1057999.5, 6307000.5 (top-left) to
+1058999.5, 6306000.5 (bottom-right).
+
+Here are the boundaries for the 4 slabs around Roquebrune-cap-martin:
+
+           1058000                1058999   1059000                1059999
+           |                            |   |                            |
+          +                               +                               + - 6307000.5
+  6307000  +----------------------------+   +----------------------------+
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |          1058_6307         |   |          1059_6307         |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                          * |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+  6306001  +----------------------------+   +----------------------------+
+          +                               +                               + - 6306000.5
+  6306000  +----------------------------+   +----------------------------+
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |          1058_6306         |   |          1059_6306         |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+           |                            |   |                            |
+  6305001  +----------------------------+   +----------------------------+
+          +                               +                               + - 6305000.5 
+          |                               |                               |
+       1057999.5                       1058999.5                       1059999.5
+
+The .asc files contain the following origins for each slab:
+
+1058_6307                                    1059_6307
+  xllcorner    1057999.500000000000            xllcorner    1058999.500000000000
+  yllcorner    6306000.500000000000            yllcorner    6306000.500000000000
+
+1058_6306                                    1059_6306
+  xllcorner    1057999.500000000000            xllcorner    1058999.500000000000
+  yllcorner    6305000.500000000000            yllcorner    6305000.500000000000
+
+The center of these 4 slabs is 1158999.5, 6306000.5.
+We use this as our center point and expand up/down left/right from there.
