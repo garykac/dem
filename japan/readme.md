@@ -17,7 +17,6 @@ Python script dependencies:
 * numpy - to manage arrays of data
 * PIL - to generate crude thumbnail images for debugging
 * pyproj - to calculate projections (lat/long)
-* zipfile - to process zip files without extracting them
 
 ## Caveats
 
