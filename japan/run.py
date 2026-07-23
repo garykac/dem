@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import getopt
+import argparse
 import os
 import pyproj
 import re
@@ -35,12 +35,15 @@ class ProcessDEM():
 	def __init__(self, options):
 		self.options = options
 		
-		self.show_info = options['info']
-		self.gen_png = options['png']
-		self.gen_obj = options['obj']
-		self.list_cells = options['list_cells']
+		self.gen_png = options.png
+		self.gen_obj = options.obj
+		self.list_cells = options.list
+
+		self.show_info = True
+		if self.gen_png or self.gen_obj:
+			self.show_info = False
 		
-		self.mesh_id = options['mesh_id']
+		self.mesh_id = options.mesh_id
 		self.mid1 = None  # Region (primary)
 		self.mid2 = None  # Quadrant (secondary)
 		self.mid3 = None  # Cell (tertiary)
@@ -56,7 +59,7 @@ class ProcessDEM():
 		else:
 			error("Invalid mesh id. Expected 6- or 8-digit number")
 		
-		self.mesh_type = options['mesh_type']
+		self.mesh_type = options.dem
 
 		self.filename = None
 		self.obj_file = None
@@ -441,55 +444,20 @@ def error(msg):
 	print(f"ERROR - {msg}")
 	exit()
 
-def usage():
-	print("Usage: %s <mesh-id> [<options>]" % sys.argv[0])
-	print("where:")
-	print("  <mesh-id> is a 6- or 8-digit mesh id")
-	print("and <options> are:")
-	print("  --png - Generate crude png thumbnails")
-	print("  --obj - Generate Wavefront .obj")
-	print("  --list - List valid cells for quadrant")
-	print("  --dem - Resolution (1 or 5) [default=1]")
-	exit()
-
 def main():
-	if len(sys.argv) < 2 or sys.argv[1].startswith('-'):
-		usage()
-	mesh_id = sys.argv[1]
+	parser = argparse.ArgumentParser(
+		description='Extract DEM data for Japan',
+		usage=f"{sys.argv[0]} <mesh_id> [options]")
+	parser.add_argument('mesh_id', help="6- or 8-digit mesh id")
+	parser.add_argument('--png', action='store_true', help="Generate crude png thumbnails")
+	parser.add_argument('--obj', action='store_true', help="Generate Wavefront .obj")
+	parser.add_argument('--list', action='store_true', help="List valid cells for quadrant")
+	parser.add_argument('--dem', choices=["DEM1A", "DEM5A"], default="DEM1A", help="Mesh resolution, default=DEM1A")
+	parser._positionals.title = "where"
+	parser._optionals.title = "and [options] are"
+	args = parser.parse_args()
 
-	try:
-		opts, args = getopt.getopt(sys.argv[2:],
-			'?',
-			['help', 'png', 'obj', 'list', 'dem='])
-	except getopt.GetoptError as err:
-		error(err)
-		usage()
-
-	options = {
-		'mesh_id': mesh_id,
-		'mesh_type': "DEM1A",
-		'png': False,
-		'obj': False,
-		'info': True,
-		'list_cells': False,
-	}
-
-	for opt, arg in opts:
-		if opt in ['-?', '--help']:
-			usage()
-		if opt in ['--png']:
-			options['png'] = True
-			options['info'] = False
-		if opt in ['--obj']:
-			options['obj'] = True
-			options['info'] = False
-		if opt in ['--list']:
-			options['list_cells'] = True
-		if opt in ['--dem']:
-			if arg == "5":
-				options['mesh_type'] = "DEM5A"
-
-	dem = ProcessDEM(options)
+	dem = ProcessDEM(args)
 
 	# Mt Fuji lat/long: 35.363410, 138.731653
 
