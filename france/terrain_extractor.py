@@ -8,7 +8,6 @@ terrain_dataset_info = [
 	"  Référentiel à grande échelle (RGE)",
 	"Modèle Numérique de Terrain (MNT = DEM)",
 	"URL: https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_RGE-ALTI",
-	"Retrieved June 2026",
 ]
 
 METER = 1
@@ -423,13 +422,17 @@ class TerrainExtractor():
 
 		self.copy_slabs(slab_copy_info)
 
+	def calc_mnt_path(self):
+		mnt_path = [ "data", self.dept ]
+		mnt_path.extend(dept_info[self.dept]["mnt_path"])
+		return mnt_path
+	
 	# Copy from slabs into |heightmap|.
 	def copy_slabs(self, slab_copy_info):
 		self.heightmap = [[0 for _ in range(self.size_x)] for _ in range(self.size_y)]
 		self.slabs = []
 		
-		mnt_path = [ "data", self.dept ]
-		mnt_path.extend(dept_info[self.dept]["mnt_path"])
+		mnt_path = self.calc_mnt_path()
 		print(mnt_path)
 		for s in slab_copy_info:
 			slab_x, slab_y = s['slab']
