@@ -54,7 +54,7 @@ dept_info = {
 
 class TerrainExtractor():
 
-	def __init__(self):
+	def __init__(self, options):
 		#self.set_latlong("d006", 43.765238, 7.459564, "Chateau Medieval in Roquebrune Cap Martin")
 		#self.set_latlong("d006", 43.727899, 7.361483, "Eze - Jardin")
 		#self.set_latlong("d050", 48.63598495012916, -1.5113454743018682, "Mont St Michel")

@@ -1,3 +1,4 @@
+import pathlib
 import pyproj
 import shapefile
 
@@ -119,7 +120,9 @@ KILOMETER = 1000
 
 class BuildingExtractor():
 
-	def __init__(self):
+	def __init__(self, options):
+		self.options = options
+		
 		# Calculated Lambert 93 coordinates.
 		self.lamb_x = None
 		self.lamb_y = None
