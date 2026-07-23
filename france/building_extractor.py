@@ -13,32 +13,38 @@ long = 2.363916
 z_offset = 0
 shapefile_dir = "data/d011/BDTOPO_3-5_TOUSTHEMES_SHP_LAMB93_D011_2026-06-15/BDTOPO/1_DONNEES_LIVRAISON_2026-06-00412/BDT_3-5_SHP_LAMB93_D011_ED2026-06-15/BATI"
 
+# Sisteron
+lat = 44.199747
+long = 5.943646
+z_offset = 0
+shapefile_dir = "data/d004/BDTOPO_3-5_TOUSTHEMES_SHP_LAMB93_D004_2026-06-15/BDTOPO/1_DONNEES_LIVRAISON_2026-06-00412/BDT_3-5_SHP_LAMB93_D004_ED2026-06-15/BATI"
+
 shapefile_building = "BATIMENT.shp"
 shapefile_linear = "CONSTRUCTION_LINEAIRE.shp"
 
 
 # Shape Fields
-#                      +         --- Z_MAX_TOIT
+#                      +         --- Z_MAX_TOIT (Max roof)
 #                     / \         |
 #                    /   \        |
 #                   /     \       |
 #                  /       \      |
-#  HAUTEUR ---    +---------+     |  --- Z_MIN_TOIT
+#  HAUTEUR ---    +---------+     |  --- Z_MIN_TOIT (Min roof)
+#  Height   |     |         |     |   |
 #           |     |         |     |   |
 #           |     |         |     |   |
-#           |     |         |     |   |
-#           |     |       _-+     |   |  --- Z_MAX_SOL
+#           |     |       _-+     |   |  --- Z_MAX_SOL (Max ground)
 #           |     |    _-         |   |   |
 #           |     | _-            |   |   |
-#          ---    +               |   |   |  --- Z_MIN_SOL
+#          ---    +               |   |   |  --- Z_MIN_SOL (Min ground)
 #                                 |   |   |   |
 #                                 |   |   |   |
 #                 ------------------------------- 0
 #
 # The building shape describes the roof outline or gutter-line at Z_MIN_TOIT, but the
 # individual points may have different Z values. In this case:
-#  Z_MIN_TOIT is the lowest point on the roof outline
-#  HAUTEUR is the distance from Z_MIN_SOL to the highest point on the roof outline
+#   Z_MIN_TOIT is the lowest point on the roof outline
+#   HAUTEUR is the distance from Z_MIN_SOL to the highest point on the roof outline
 #
 # List of relevant fields to extract.
 ShapeFields_Building = [
@@ -60,9 +66,15 @@ ShapeFields_Building = [
 	# ORIGIN_BAT - Where this shape's data came from: Autre | Cadastre | Imagerie aérienne | Lidar HD
 
 	# Batiment Fields
-	"NATURE",  # Architecture type: Arc de triomphe | Arène ou théâtre antique | Chapelle | Château | Eglise | Fort, blockhaus, casemate | Indifférenciée | Industriel, agricole ou commercial | Monument | Moulin à vent | Serre | Silo | Tour, donjon | Tribune
-	# USAGE1 - How building is used: Agricole | Annexe | Commercial et services | Indifférencié | Industriel | Religieux | Résidentiel | Sportif
-	# USAGE2 - Secondary building use: Sans valeur | Agricole | Annexe | Commercial et services | Indifférencié | Industriel | Religieux | Résidentiel | Sportif
+	"NATURE",  # Architecture type: Arc de triomphe | Arène ou théâtre antique | Chapelle
+	           # | Château | Eglise | Fort, blockhaus, casemate | Indifférenciée
+	           # | Industriel, agricole ou commercial | Monument | Moulin à vent | Serre
+	           # | Silo | Tour, donjon | Tribune
+	# USAGE1 - How building is used: Agricole | Annexe | Commercial et services
+	           # | Indifférencié | Industriel | Religieux | Résidentiel | Sportif
+	# USAGE2 - Secondary building use: Sans valeur | Agricole | Annexe
+	           # | Commercial et services | Indifférencié | Industriel | Religieux
+	           # | Résidentiel | Sportif
 	# LEGER - A lightweight structure: one without a foundation, or open on one side
 	# NB_LOGTS - Number of dwellings in building
 	# NB_ETAGES - Number of floors in building
@@ -165,12 +177,27 @@ class BuildingExtractor():
 					missing_z = True
 					if rec['Z_MIN_TOIT']:
 						z = rec['Z_MIN_TOIT']
+					elif rec['Z_MAX_TOIT']:
+						z = rec['Z_MAX_TOIT']
 					elif rec['Z_MIN_SOL']:
 						z = rec['Z_MIN_SOL']
 					elif rec['Z_MAX_SOL']:
 						z = rec['Z_MAX_SOL']
 					else:
 						z = 0
+
+				zRoofMin = None
+				if rec['Z_MIN_TOIT']:
+					zRoofMin = rec['Z_MIN_TOIT']
+				elif rec['Z_MAX_TOIT']:
+					zRoofMin = rec['Z_MAX_TOIT']
+
+				zGroundMax = None
+				if rec['Z_MAX_SOL']:
+					zGroundMax = rec['Z_MAX_SOL']
+				elif rec['Z_MIN_SOL']:
+					zGroundMax = rec['Z_MIN_SOL']
+
 				if z > highest_z:
 					highest_z = z
 				pts.append([p[0]-self.center_x, p[1]-self.center_y, z - z_offset])
@@ -212,8 +239,8 @@ class BuildingExtractor():
 
 			if not missing_z:
 				max_ground = rec['Z_MAX_SOL']
-				if max_ground and max_ground < rec['Z_MIN_TOIT']:
-					fout.write(f"# {max_ground} < {rec['Z_MIN_TOIT']} = {max_ground < rec['Z_MIN_TOIT']}\n")
+				if max_ground and max_ground < zRoofMin:
+					fout.write(f"# {max_ground} < {zRoofMin} = {max_ground < zRoofMin}\n")
 					for p in pts:
 						fout.write(f"v {p[0]} {p[1]} {max_ground - z_offset}\n")
 
