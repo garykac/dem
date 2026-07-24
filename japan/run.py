@@ -358,18 +358,18 @@ class ProcessDEM():
 						top += 1
 						bottom += 1
 
-	def process_file(self, fp, base_dirname, base_filename):
+	def process_file(self, fp, base_outdirname, base_filename):
 		self.load(fp)
 
 		if self.gen_png:
-			dirname = f"{base_dirname}-png"
+			dirname = f"{base_outdirname}-png"
 			if not os.path.exists(dirname):
 				os.makedirs(dirname)
 			outfile = os.path.join(dirname, f"{base_filename}.png")
 			self.save_image(outfile)
 
 		if self.gen_obj:
-			dirname = f"{base_dirname}-obj"
+			dirname = f"{base_outdirname}-obj"
 			if not os.path.exists(dirname):
 				os.makedirs(dirname)
 			outfile = os.path.join(dirname, f"{base_filename}.obj")
@@ -393,7 +393,7 @@ class ProcessDEM():
 			self.error(f"Unable to find the mesh zip file")
 		mesh_zip_base = f"FG-GML-{mesh_id}-{resolution}-{date}"
 		mesh_zip = f"{mesh_zip_base}.zip"
-		dirbase = os.path.join(dir, mesh_zip_base)
+		outdirbase = os.path.join(dir, mesh_zip_base)
 
 		if self.list_cells:
 			cells = np.full((10, 10), False)
@@ -420,7 +420,7 @@ class ProcessDEM():
 					else:
 						with z.open(f) as fp:
 							self.mid3 = f"{y}{x}"
-							self.process_file(fp, dirbase, fbase)
+							self.process_file(fp, outdirbase, fbase)
 							self.mid3 = self.mid3_set
 
 		if not self.mid3_set:
@@ -453,6 +453,7 @@ def main():
 	parser.add_argument('--obj', action='store_true', help="Generate Wavefront .obj")
 	parser.add_argument('--list', action='store_true', help="List valid cells for quadrant")
 	parser.add_argument('--dem', choices=["DEM1A", "DEM5A"], default="DEM1A", help="Mesh resolution, default=DEM1A")
+
 	parser._positionals.title = "where"
 	parser._optionals.title = "and [options] are"
 	args = parser.parse_args()
