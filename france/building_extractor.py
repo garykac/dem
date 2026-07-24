@@ -1,30 +1,11 @@
+import os
 import pathlib
-import pyproj
+import re
 import shapefile
+import sys
+import zipfile
 
-# Eze
-lat = 43.727806
-long = 7.361583
-z_offset = 400
-shapefile_dir = "data/d006/BDTOPO_3-5_TOUSTHEMES_SHP_LAMB93_D006_2026-06-15/BDTOPO/1_DONNEES_LIVRAISON_2026-06-00412/BDT_3-5_SHP_LAMB93_D006_ED2026-06-15/BATI"
-
-# Carcassonne
-lat = 43.206602
-long = 2.363916
-z_offset = 0
-shapefile_dir = "data/d011/BDTOPO_3-5_TOUSTHEMES_SHP_LAMB93_D011_2026-06-15/BDTOPO/1_DONNEES_LIVRAISON_2026-06-00412/BDT_3-5_SHP_LAMB93_D011_ED2026-06-15/BATI"
-
-# Sisteron
-lat = 44.199747
-long = 5.943646
-z_offset = 0
-shapefile_dir = "data/d004/BDTOPO_3-5_TOUSTHEMES_SHP_LAMB93_D004_2026-06-15/BDTOPO/1_DONNEES_LIVRAISON_2026-06-00412/BDT_3-5_SHP_LAMB93_D004_ED2026-06-15/BATI"
-
-shapefile_building = "BATIMENT.shp"
-shapefile_linear = "CONSTRUCTION_LINEAIRE.shp"
-
-
-# Shape Fields
+# Shape Fields for buildings
 #                      +         --- Z_MAX_TOIT (Max roof)
 #                     / \         |
 #                    /   \        |
@@ -90,6 +71,7 @@ ShapeFields_Building = [
 	# IDS_RNB - Identifiers from Référentiel National des Bâtiments
 ]
 
+# Shape Fields for linear construction (like walls)
 ShapeFields_Linear = [
 	# DeletionFlag
 	"ID",  # Identifier: 24 char: 8 char Class + 16 char numeric code
@@ -120,22 +102,21 @@ KILOMETER = 1000
 
 class BuildingExtractor():
 
-	def __init__(self, options):
-		self.options = options
+	def __init__(self, opt):
+		self.options = opt
 		
 		# Calculated Lambert 93 coordinates.
-		self.lamb_x = None
-		self.lamb_y = None
+		self.lamb_x = opt.lamb_x
+		self.lamb_y = opt.lamb_y
 
-		# Initialize the transformer with always_xy=True to enforce (Longitude, Latitude) order
-		transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2154", always_xy=True)
+		if opt.center_y:
+			print("Adjusting center_y")
+			opt.center_y -= 1000
+		self.z_offset = opt.offset
 
-		self.lamb_x, self.lamb_y = transformer.transform(long, lat)
-		print(self.lamb_x, self.lamb_y)
-
-		print(shapefile_dir)
-		self.sfBuilding = shapefile.Reader(f"{shapefile_dir}/{shapefile_building}")
-		self.sfLinear = shapefile.Reader(f"{shapefile_dir}/{shapefile_linear}")
+		self.init_data_dir()
+		
+		#print(shapefile_dir)
 		#print(sf.fields)
 
 		#print(sf)
@@ -147,21 +128,55 @@ class BuildingExtractor():
 		#175689 BBox(xmin=1051319.7, ymin=6301787.9, xmax=1051325.2, ymax=6301792.7)
 		#175690 BBox(xmin=1051318.0, ymin=6301789.1, xmax=1051323.8, ymax=6301794.6)
 
-		self.center_x = None
-		self.center_y = None
-
-		self.expand = 10 * METER
+		self.expand = 50 * METER
 		
 		self.bbox = [self.lamb_x - self.expand, self.lamb_y - self.expand,
 					self.lamb_x + self.expand, self.lamb_y + self.expand]
 
-	def set_center(self, x, y):
-		print(f"Setting center to {x}, {y}")
-		self.center_x = x
-		self.center_y = y-1000
-	
+	def error_missing_data_dir(self):
+		print(f"ERROR - unable to find zip file data for {self.options.dept}")
+		sys.exit(1)
+
+	def init_data_dir(self):
+		base_dir = os.path.join(self.options.data, self.options.dept)
+
+		if not pathlib.Path(base_dir).is_dir():
+			self.error_missing_data_dir()
+
+		# Find the .zip file with the most recent data.
+		zipDataName = None
+		zipDataDate = "1900-01-01"
+		for f in pathlib.Path(base_dir).iterdir():
+			if f.is_file():
+				m = re.fullmatch(r'BDTOPO_3-5_TOUSTHEMES_SHP_LAMB93_(....)_(....-..-..).zip', f.name)
+				if m:
+					date = m.group(2)
+					if date > zipDataDate:
+						zipDataDate = date
+						zipDataName = f.name
+		if not zipDataName:
+			self.error_missing_data_dir()
+
+		path = [self.options.data, self.options.dept]		
+		zipPath = os.path.join(*path, zipDataName)
+
+		buildingPath = None
+		linearPath = None
+		with zipfile.ZipFile(zipPath, "r") as z:
+			for f in sorted(z.namelist()):
+				m = re.fullmatch(r'BDTOPO_3-5_TOUSTHEMES_SHP_LAMB93_.*/BATI/BATIMENT.shp', f)
+				if m:
+					buildingPath = f
+				m = re.fullmatch(r'BDTOPO_3-5_TOUSTHEMES_SHP_LAMB93_.*/BATI/CONSTRUCTION_LINEAIRE.shp', f)
+				if m:
+					linearPath = f
+
+		self.shapefile_building_path = os.path.join(zipPath, buildingPath)
+		self.shapefile_linear_path = os.path.join(zipPath, linearPath)
+
 	def export_building(self, fout):
-		for shaperec in self.sfBuilding.iterShapeRecords(bbox = self.bbox, fields = ShapeFields_Building):
+		sfBuilding = shapefile.Reader(f"{self.shapefile_building_path}")
+		for shaperec in sfBuilding.iterShapeRecords(bbox = self.bbox, fields = ShapeFields_Building):
 			shape = shaperec.shape
 			rec = shaperec.record
 			#print()
@@ -201,9 +216,15 @@ class BuildingExtractor():
 				elif rec['Z_MIN_SOL']:
 					zGroundMax = rec['Z_MIN_SOL']
 
+				if not self.options.center_x:
+					self.options.center_x = p[0]
+					self.options.center_y = p[1]
+					print(f"Setting center_x,y to {p[0]}, {p[1]}")
+
+				pts.append([p[0] - self.options.center_x, p[1] - self.options.center_y, z - self.z_offset])
+
 				if z > highest_z:
 					highest_z = z
-				pts.append([p[0]-self.center_x, p[1]-self.center_y, z - z_offset])
 				nPoints += 1
 			self.nShapesFound += 1
 
@@ -240,12 +261,12 @@ class BuildingExtractor():
 				fout.write(f" {self.startPoint + nPoints - index - 1}")
 			fout.write("\n")
 
-			if not missing_z:
+			if True:  #not missing_z:
 				max_ground = rec['Z_MAX_SOL']
 				if max_ground and max_ground < zRoofMin:
 					fout.write(f"# {max_ground} < {zRoofMin} = {max_ground < zRoofMin}\n")
 					for p in pts:
-						fout.write(f"v {p[0]} {p[1]} {max_ground - z_offset}\n")
+						fout.write(f"v {p[0]} {p[1]} {max_ground - self.z_offset}\n")
 
 					# Bottom walls
 					startTop = self.startPoint
@@ -264,7 +285,7 @@ class BuildingExtractor():
 				min_ground = rec['Z_MIN_SOL']
 				if min_ground:
 					for p in pts:
-						fout.write(f"v {p[0]} {p[1]} {min_ground - z_offset}\n")
+						fout.write(f"v {p[0]} {p[1]} {min_ground - self.z_offset}\n")
 
 					fout.write(f"usemtl {special}lower\n")
 					startTop = self.startPoint
@@ -283,29 +304,40 @@ class BuildingExtractor():
 			self.startPoint += nPoints
 	
 	def export_linear_constuction(self, fout):
-		for shaperec in self.sfLinear.iterShapeRecords(bbox = self.bbox, fields = ShapeFields_Linear):
+		sfLinear = shapefile.Reader(f"{self.shapefile_linear_path}")
+		for shaperec in sfLinear.iterShapeRecords(bbox = self.bbox, fields = ShapeFields_Linear):
 			shape = shaperec.shape
 			rec = shaperec.record
 			#print(shape)
 			#print(rec)
 			#print(f"  {shape.points_3D}")
 
+			if rec['NATURE'] in ["Tunnel"]:
+				continue
+
 			nPoints = 0
 			pts = []
 			for p in shape.points_3D:
-				pts.append([p[0]-self.center_x, p[1]-self.center_y, p[2] - z_offset])
+				z = p[2]
+				if z < -500:
+					z = 0
+
+				pts.append([p[0] - self.options.center_x, p[1] - self.options.center_y, z - self.z_offset])
 				nPoints += 1
 			self.nShapesFound += 1
 
 			special = ""
-			if not rec['NATURE'] == "Mur":
+			if not rec['NATURE'].startswith("Mur"):
 				special = "special-"
 
+			fout.write(f"\n")
+			fout.write(f"# {rec['ID']} - {rec['NATURE']}\n")
 			fout.write(f"o CL_{rec['ID'][8:]}\n")
 
 			for p in pts:
 				fout.write(f"v {p[0]} {p[1]} {p[2]}\n")
 			for p in pts:
+				# Give an arbitrary height (5m) to the line.
 				fout.write(f"v {p[0]} {p[1]} {p[2] - 5}\n")
 
 			startTop = self.startPoint

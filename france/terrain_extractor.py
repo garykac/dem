@@ -1,6 +1,11 @@
+# -*- coding: utf-8 -*-
+import io
 import os
-import pyproj
+import re
+import sys
+import zipfile
 
+from pathlib import Path
 
 terrain_dataset_info = [
 	"Data source IGNF_RGE-ALTI",
@@ -13,54 +18,11 @@ terrain_dataset_info = [
 METER = 1
 KILOMETER = 1000
 
-dept_info = {
-	"d006": {
-		"name": "Alpes-Maritimes",
-		"mnt_path": [
-			"RGEALTI_2-0_1M_ASC_LAMB93-IGN69_D006_2024-02-02",
-			"RGEALTI",
-			"1_DONNEES_LIVRAISON_2024-03-00239",
-			"RGEALTI_MNT_1M_ASC_LAMB93_IGN69_D006_20240326",
-		],
-	},
-	"d011": {
-		"name": "Aude",
-		"mnt_path": [
-			"RGEALTI_2-0_1M_ASC_LAMB93-IGN69_D011_2024-11-26",
-			"RGEALTI",
-			"1_DONNEES_LIVRAISON_2024-12-00020",
-			"RGEALTI_MNT_1M_ASC_LAMB93_IGN69_D011_20241209",
-		],
-	},
-	"d013": {
-		"name": "Bouches-du-Rhône",
-		"mnt_path": [
-			"RGEALTI_2-0_1M_ASC_LAMB93-IGN69_D013_2022-12-16",
-			"RGEALTI",
-			"1_DONNEES_LIVRAISON_2023-01-00125",
-			"RGEALTI_MNT_1M_ASC_LAMB93_IGN69_D013_20230113",
-		],
-	},
-	"d050": {
-		"name": "Manche",
-		"mnt_path": [
-			"RGEALTI_2-0_1M_ASC_LAMB93-IGN69_D050_2022-12-21",
-			"RGEALTI",
-			"1_DONNEES_LIVRAISON_2024-03-00239",
-			"RGEALTI_MNT_1M_ASC_LAMB93_IGN69_D050_20240326",
-		],
-	},
-}
-
 class TerrainExtractor():
 
-	def __init__(self, options):
-		#self.set_latlong("d006", 43.765238, 7.459564, "Chateau Medieval in Roquebrune Cap Martin")
-		#self.set_latlong("d006", 43.727899, 7.361483, "Eze - Jardin")
-		#self.set_latlong("d050", 48.63598495012916, -1.5113454743018682, "Mont St Michel")
-		self.set_latlong("d011", 43.206602, 2.363916, "Carcassonne")
-		#self.set_latlong("d013", 43.284287, 5.371359, "Basilique Notre-Dame de la Garde, Marseille")
-
+	def __init__(self, opt):
+		self.options = opt
+		
 		# Test lat/long locations.
 		# Span 2 tiles:
 		#self.set_latlong("d006", 43.723498, 7.358634)  # Eze - near left tile boundary
@@ -71,9 +33,14 @@ class TerrainExtractor():
 		#self.set_latlong("d006", 43.730199, 7.357503)  # Eze - near lower right corner
 		#self.set_latlong("d006", 43.729218, 7.358721)  # Eze - near upper left corner
 
+		self.dept = opt.dept
+		self.latitude = opt.lat
+		self.longitude = opt.long
+		self.desc = opt.desc
+
 		# Calculated Lambert 93 coordinates.
-		self.lamb_x = None
-		self.lamb_y = None
+		self.lamb_x = opt.lamb_x
+		self.lamb_y = opt.lamb_y
 		
 		# Name of the 1km x 1km slab that contains the point.
 		# This is the Lambert coordinate of the upper left corner cell in the slab.
@@ -115,30 +82,14 @@ class TerrainExtractor():
 		self.heightmap = None
 		self.obj_outfile = "out.obj"
 
-	def set_latlong(self, dept, lat, long, desc=None):
-		self.dept = dept
-		self.latitude = lat
-		self.longitude = long
-		self.desc = desc
-
+	def error(self, msg):
+		print(f"ERROR: {msg}")
+		sys.stdout.flush()
+		sys.exit(1)
+		
 	# Get the terrain center (in Lambert93).
 	def get_center(self):
 		return self.center_x, self.center_y
-
-	# Convert latitude/longitude to Lambert 93 projection values.
-	def calc_lambert(self):
-
-		# Source/Dest coordinate systems.
-		# Source is lat/long = "WGS84" = "EPSG:4326"
-		coordSrc = "EPSG:4326"
-		# Dest is Lambert-93 = "EPSG:2154"
-		coordDst = "EPSG:2154"
-		#print(coordSrc, coordDst)
-
-		# Transform coordinates.
-		transformer = pyproj.Transformer.from_crs(coordSrc, coordDst, always_xy=True)
-		self.lamb_x, self.lamb_y = transformer.transform(self.longitude, self.latitude)
-		#print(f"Lambert93: {self.lamb_x}, {self.lamb_y}")
 
 	# Find the slab and cell that contain the specified point.
 	def find_slab_cell(self):
@@ -159,18 +110,17 @@ class TerrainExtractor():
 		#      +---->
 		#          x
 
-		# Calc cell that contains the original point (x,y relative to origin cell
-		# in lower left).
+		# Calc cell that contains the original point (x,y relative to origin cell in
+		# lower left).
 		self.cell_x = int(self.slab_rx + 0.5)
 		self.cell_y = int(self.slab_ry + 0.5)
 		print(self.cell_x, self.cell_y)
 
 	# Expand the neighborhood around the cell.
 	def expand_cells(self):
-		# Start by finding the 2x2 grid of cells that surround this point,
-		# keeping it as close to the center as possible. This gives a
-		# neighborhood distance of 1 around the point, which we can later
-		# expand.
+		# Start by finding the 2x2 grid of cells that surround this point, keeping it as
+		# close to the center as possible. This gives a neighborhood distance of 1 around
+		# the point, which we can later expand.
 		#
 		#      +-------+          +-------+          +-------+          +-------+
 		#      | *     |          |     * |          |       |          |       |
@@ -210,7 +160,10 @@ class TerrainExtractor():
 		y = self.cell_y + dy
 		print(x, y)
 
-		# Calculate the center of the 2x2 grid in Lambert coordinates.
+		# Calculate the center point of the 2x2 grid in Lambert coordinates.
+		# This will be the origin (0,0) of the generated mesh.
+		# We export this point (via get_center()) so that buildings can be aligned to
+		# the terrain mesh correctly.
 		self.center_x = (self.slab_x * KILOMETER) - 0.5 + x + 1
 		self.center_y = (self.slab_y * KILOMETER) - 0.5 + y + 1
 
@@ -218,13 +171,12 @@ class TerrainExtractor():
 		# we need to invert the y-axis.
 		y = KILOMETER - y
 
-		# Now that we have this 2x2 grid that defines the center of our region,
-		# we can expand it equally in all directions. We consider this 2x2 grid
-		# to have a distance of 1 around the center point (where the 4 cells
-		# meet).
+		# Now that we have this 2x2 grid that defines the center of our region, we can
+		# expand it equally in all directions. We consider this 2x2 grid to have a
+		# distance of 1 around the center point (where the 4 cells meet).
 		#
 		# For example, expanding to a neighborhood of size 3 would result in an 6x6
-		# grid (extending 3 in each direction):
+		# grid (which extends 3 in each direction):
 		# 
 		#   +---+---+---+---+---+---+
 		#   |   |   |   |   |   |   |
@@ -369,15 +321,15 @@ class TerrainExtractor():
 					dst_y2 = size_y1
 
 			if split_x and split_y:
-					#  +-------------+-------------+
-					#  |             |             |
-					#  |    x1 y1    |    x2 y1    |
-					#  |             |             |
-					#  +-------------+-------------+
-					#  |             |             |
-					#  |    x1 y2    |    x2 y2    |
-					#  |             |             |
-					#  +-------------+-------------+
+				#  +-------------+-------------+
+				#  |             |             |
+				#  |    x1 y1    |    x2 y1    |
+				#  |             |             |
+				#  +-------------+-------------+
+				#  |             |             |
+				#  |    x1 y2    |    x2 y2    |
+				#  |             |             |
+				#  +-------------+-------------+
 				slab_copy_info = [
 					{
 						'slab': [slab_x1, slab_y1],
@@ -405,6 +357,15 @@ class TerrainExtractor():
 					},
 				]
 			else:
+				#  +-------------+
+				#  |             |
+				#  |    x1 y1    |      +-------------+-------------+
+				#  |             |      |             |             |
+				#  +-------------+  OR  |    x1 y1    |    x2 y1    |
+				#  |             |      |             |             |
+				#  |    x1 y2    |      +-------------+-------------+
+				#  |             |
+				#  +-------------+
 				slab_copy_info = [
 					{
 						'slab': [slab_x1, slab_y1],
@@ -422,64 +383,97 @@ class TerrainExtractor():
 
 		self.copy_slabs(slab_copy_info)
 
-	def calc_mnt_path(self):
-		mnt_path = [ "data", self.dept ]
-		mnt_path.extend(dept_info[self.dept]["mnt_path"])
-		return mnt_path
-	
+	# Find the .zip file with the most recent data for this department.
+	def find_zipfile_path(self):
+		dir = os.path.join("data", self.dept)
+		zipDate = "1900-01-01"
+		zipFile = None
+		for file in [x for x in Path(dir).iterdir() if x.is_file()]:
+			pattern = f'RGEALTI_2-0_1M_ASC_LAMB93-IGN69_...._(....-..-..).zip'
+			m = re.fullmatch(pattern, file.name)
+			if m:
+				date = m.group(1)
+				if zipDate < date:
+					zipDate = date
+					zipFile = file.name
+		if not zipFile:
+			self.error(f"Unable to find the mesh zip file for {self.dept}")
+		return os.path.join(dir, zipFile)
+
+	# Find the path within the .zip file to the directory with the .asc DEM/MNT data.
+	def find_datafile_path(self, z):
+		ascDirPath = []
+		p = zipfile.Path(z)
+		for d1 in [x for x in p.iterdir() if x.is_dir()]:
+			if re.fullmatch(f'RGEALTI_2-0_1M_ASC_LAMB93-IGN69_D..._....-..-..', d1.name):
+				ascDirPath.append(d1.name)
+				for d2 in [x for x in d1.iterdir() if x.is_dir()]:
+					if re.fullmatch(f'RGEALTI', d2.name):
+						ascDirPath.append(d2.name)
+						for d3 in [x for x in d2.iterdir() if x.is_dir()]:
+							if re.fullmatch(f'1_DONNEES_LIVRAISON_....-..-.....', d3.name):
+								ascDirPath.append(d3.name)
+								for d4 in [x for x in d3.iterdir() if x.is_dir()]:
+									if re.fullmatch(f'RGEALTI_MNT_1M_ASC_LAMB93_IGN69_D..._........', d4.name):
+										ascDirPath.append(d4.name)
+										return os.path.join(*ascDirPath)
+
+		self.error(f"Unable to data subdirectory in zipfile")
+		return None
+
 	# Copy from slabs into |heightmap|.
 	def copy_slabs(self, slab_copy_info):
 		self.heightmap = [[0 for _ in range(self.size_x)] for _ in range(self.size_y)]
 		self.slabs = []
 		
-		mnt_path = self.calc_mnt_path()
-		print(mnt_path)
-		for s in slab_copy_info:
-			slab_x, slab_y = s['slab']
-			start_x, start_y = s['src_xy']
-			size_x, size_y = s['size_xy']
-			end_x = start_x + size_x
-			end_y = start_y + size_y
-			hm_x, hm_y = s['dst_xy']
+		zipPath = self.find_zipfile_path()
+		with zipfile.ZipFile(zipPath, "r") as z:
+			asc_data_path = self.find_datafile_path(z)
+			for s in slab_copy_info:
+				slab_x, slab_y = s['slab']
+				start_x, start_y = s['src_xy']
+				size_x, size_y = s['size_xy']
+				end_x = start_x + size_x
+				end_y = start_y + size_y
+				hm_x, hm_y = s['dst_xy']
 	
-			# Slab filename format:
-			slab_file = f"RGEALTI_FXX_{slab_x:04}_{slab_y:04}_MNT_LAMB93_IGN69.asc"
-			self.slabs.append([slab_x, slab_y])
-			print(slab_file)
-			print(f"({start_x}, {start_y}) + ({size_x}, {size_y}) -> ({end_x}, {end_y}) @ ({hm_x}, {hm_y})")
+				# Slab filename format:
+				slab_file = f"RGEALTI_FXX_{slab_x:04}_{slab_y:04}_MNT_LAMB93_IGN69.asc"
+				self.slabs.append([slab_x, slab_y])
+				#print(slab_file)
+				#print(f"({start_x}, {start_y}) + ({size_x}, {size_y}) -> ({end_x}, {end_y}) @ ({hm_x}, {hm_y})")
 
-			slab_path = os.path.join(*mnt_path, slab_file)
+				slab_path = os.path.join(asc_data_path, slab_file)
 
-			# Copy data from slab into |heightmap|.
-			with open(slab_path, "r") as fp:
-				# Skip over header.
-				# BUG: Assumes header is exactly 6 lines.
-				n = 0
-				while n < 6:
-					n += 1
-					line = fp.readline()
-					#print(line.rstrip())
-				row = 0
-				x = 0
-				y = 0
-				while line:
-					line = fp.readline()
-					#print(row, start_y, size_y)
-					if row >= start_y and row < end_y:
-						x = 0
+				# Copy data from slab into |heightmap|.
+				with io.TextIOWrapper(z.open(slab_path), encoding="utf-8") as fp:
+					# Skip over header.
+					# BUG?: Assumes header is exactly 6 lines.
+					n = 0
+					while n < 6:
+						n += 1
+						line = fp.readline()
 						#print(line.rstrip())
-						data = line.strip().split(' ')
-						for col in range(start_x, end_x):
-							self.heightmap[hm_y + y][hm_x + x] = data[col]
-							x += 1
-						y += 1
-					row += 1
+					row = 0
+					x = 0
+					y = 0
+					while line:
+						line = fp.readline()
+						#print(row, start_y, size_y)
+						if row >= start_y and row < end_y:
+							x = 0
+							#print(line.rstrip())
+							data = line.strip().split(' ')
+							for col in range(start_x, end_x):
+								self.heightmap[hm_y + y][hm_x + x] = data[col]
+								x += 1
+							y += 1
+						row += 1
 
-	# Export |heightmap| to 3d .obj file.
+	# Export |heightmap| to Wavefront .obj file.
 	def export_heightmap(self):
 		if not self.heightmap:
-			print("Invalid heightmap")
-			return
+			self.error("Invalid heightmap - cannot export")
 		
 		with open(self.obj_outfile, "wt") as fout:
 			if self.desc:
@@ -503,10 +497,10 @@ class TerrainExtractor():
 				fout.write(f"#  {s[0]:04}, {s[1]:04}\n")
 			fout.write("\n")
 
-			fout.write("g terrain\n")
+			fout.write("o Terrain\n")
 
-			# Export vertices by adding x,y to each z value in the heightmap.
-			# Adjust start x,y so that the center of the terrain is (0,0)/
+			# Export vertices by adding x,y coordinates to each z value in the heightmap.
+			# Adjust start x,y so that the center of the terrain is (0,0).
 			y = self.extend_y - 0.5
 			for row in range(0, self.size_y):
 				x = 0.5 - self.extend_x
