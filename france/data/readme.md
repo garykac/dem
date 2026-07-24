@@ -1,4 +1,8 @@
-The French data should be downloaded into this directory.
+The French data should be downloaded into this directory and pre-processed as described here before you run the scripts.
+
+* [RGE ALTI](#rge-alti)
+* [BD TOPO](#bd-topo)
+* [Pre-processing](#Pre-processing)
 
 France is divided into 96 departments identified as D001 through D095 (with D020 Corsica being split into D02A and D02B). There are also a few overseas territories (like Guadeloupe and La Réunion) assigned values from D971 to D978.
 
@@ -74,3 +78,11 @@ Clicking on this will show the list of files:
 ![bd-topo-file](/Users/garykac/projects/github/dem/france/img/bd-topo-file.png)
 
 Data is compressed in `.7z` files, but since the data in the shapefiles is much smaller than the RGE ALTI DEM files, there isn't a need to split them into multiple files.
+
+## Pre-processing
+
+Python does not have native support for handling `.7z` files the way that it does for `.zip` files, so we can't use the downloaded files directly.
+
+In order for these files to be used by the python scripts, we need to convert these `.7z` files into `.zip` files. The way to do this is by uncompressing the `.7z` files and then recompressing as `.zip` files.
+
+You can use whatever tools you have available on your platform for this.
